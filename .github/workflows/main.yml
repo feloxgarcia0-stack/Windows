@@ -1,4 +1,4 @@
-name: RDP con ZeroTier (Acceso Público)
+name: RDP con ZeroTier (Versión Corregida)
 
 on:
   workflow_dispatch:
@@ -31,18 +31,24 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i", "`"$env:TEMP\zerotier.msi`"", "/quiet" -Wait
           
           # Espera a que el servicio se inicie
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 15
           
-          # --- CAMBIO REALIZADO AQUÍ ---
-          # Se une a la red utilizando el Network ID directamente en el script.
-          & 'C:\Program Files\ZeroTier\One\zerotier-cli.bat' join 4753cf475f1fafc2
+          # --- BLOQUE CORREGIDO CON EL MÉTODO Start-Process ---
+          # Se define la ruta al ejecutable y los argumentos por separado.
+          $ztCliPath = "C:\Program Files\ZeroTier\One\zerotier-cli.bat"
+          $ztArgs = "join 4753cf475f1fafc2"
+          
+          # Se ejecuta el comando de forma robusta y se espera a que termine.
+          Start-Process -FilePath $ztCliPath -ArgumentList $ztArgs -Wait -NoNewWindow
           
           # Espera a que se establezca la conexión y se asigne la IP
           Start-Sleep -Seconds 20
           
-          # Obtiene la dirección IP asignada por ZeroTier
-          $ztIP = (& 'C:\Program Files\ZeroTier\One\zerotier-cli.bat' listnetworks -j | ConvertFrom-Json).assignedAddresses[0].split('/')[0]
-          
+          # Se obtiene la dirección IP de la misma forma robusta.
+          $ztListArgs = "listnetworks -j"
+          $ztJson = Start-Process -FilePath $ztCliPath -ArgumentList $ztListArgs -Wait -NoNewWindow -PassThru | ForEach-Object { $_.StandardOutput.ReadToEnd() }
+          $ztIP = ($ztJson | ConvertFrom-Json).assignedAddresses[0].split('/')[0]
+
           if (-not $ztIP) {
               Write-Error "Error: No se pudo obtener la dirección IP de ZeroTier."
               exit 1
@@ -57,7 +63,6 @@ jobs:
           Write-Host "Password: ${{ env.RDP_PASSWORD }}"
           Write-Host "============================`n"
           
-          # Bucle para mantener la máquina activa
           while ($true) {
               $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
               Write-Host "[$timestamp] RDP session is active. This job will be terminated automatically after 6 hours."
