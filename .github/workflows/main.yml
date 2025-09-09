@@ -1,4 +1,4 @@
-name: RDP con playit.gg (Reclamación Manual)
+name: RDP con playit.gg (Reclamación Manual - Versión Fija)
 
 on:
   workflow_dispatch:
@@ -11,46 +11,38 @@ jobs:
     steps:
       - name: Habilitar RDP y Crear Usuario
         run: |
-          # Se establece una contraseña segura y se crea el usuario.
           $Password = "P@ssw0rdFeloxPC2025!"
           net user Runner $Password /add /y
           net localgroup administrators Runner /add
           net localgroup "Remote Desktop Users" Runner /add
-          
-          # Se habilita la conexión RDP y se abre el puerto en el firewall.
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
-          
-          # Se guardan las credenciales para mostrarlas al final.
           echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Iniciar playit.gg y Obtener Enlace de Reclamación
         run: |
-          # URL de descarga oficial y verificada.
-          Invoke-WebRequest -Uri 'https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x64.exe' -OutFile "C:\playit.exe"
+          # --- URL DE DESCARGA ESPECÍFICA Y VERIFICADA (v0.15.26) ---
+          # Se usa el enlace directo a la versión 0.15.26 para garantizar la estabilidad.
+          Invoke-WebRequest -Uri 'https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe' -OutFile "C:\playit.exe"
           
-          # Inicia playit en segundo plano, guardando su salida en un archivo de log.
+          # Inicia playit en segundo plano.
           Start-Process -FilePath "C:\playit.exe" -ArgumentList "" -NoNewWindow -RedirectStandardOutput "$env:TEMP\playit.log" -RedirectStandardError "$env:TEMP\playit_error.log"
           
-          # Espera un tiempo prudencial para que se genere el enlace.
-          echo "Esperando 20 segundos para que playit.gg genere el enlace de reclamación..."
+          echo "Esperando a que playit.gg genere el enlace de reclamación..."
           Start-Sleep -Seconds 20
           
-          # Busca EXCLUSIVAMENTE el enlace de reclamación en el log.
-          $ClaimURL = Get-Content "$env:TEMP\playit.log" | Select-String -Pattern "https://playit.gg/claim/.*" -AllMatches | ForEach-Object { ($_.Matches | ForEach-Object { $_.Value }) } | Select-Object -Last 1
+          # Busca el enlace de reclamación en el log.
+          $ClaimURL = Get-Content "$env:TEMP\playit.log" | Select-String -Pattern "https://playit.gg/claim/.*" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
 
-          # Si no se encuentra el enlace, muestra un error y los logs para depuración.
           if (-not $ClaimURL) {
               Write-Error "Error: No se pudo obtener el enlace de reclamación."
-              Write-Host "Contenido del log principal:"
-              Get-Content "$env:TEMP\playit.log"
-              Write-Host "Contenido del log de errores:"
+              Write-Host "Revisando logs para depuración:"
               Get-Content "$env:TEMP\playit_error.log"
+              Get-Content "$env:TEMP\playit.log"
               exit 1
           }
           
-          # Guarda el enlace para mostrarlo en el siguiente paso.
           echo "PLAYIT_CLAIM_URL=$ClaimURL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Instrucciones y Credenciales de Conexión
@@ -59,14 +51,14 @@ jobs:
           Write-Host "                      ACCIÓN REQUERIDA"
           Write-Host "========================================================================"
           Write-Host ""
-          Write-Host "1. Copia y pega la siguiente URL en tu navegador:"
+          Write-Host "1. Copia la siguiente URL y pégala en tu navegador:"
           Write-Host "   ${{ env.PLAYIT_CLAIM_URL }}"
           Write-Host ""
-          Write-Host "2. Inicia sesión en playit.gg y sigue los pasos para crear el túnel RDP."
-          Write-Host "3. Una vez creado, playit.gg te dará la dirección final (ej: algo.playit.gg:1234)."
+          Write-Host "2. Inicia sesión en playit.gg para reclamar el agente."
+          Write-Host "3. Crea un túnel de tipo TCP para el puerto local 3389."
           Write-Host ""
           Write-Host "========================================================================"
-          Write-Host "               CREDENCIALES PARA EL ESCRITORIO REMOTO"
+          Write-Host "               CREDENCIALES DE ESCRITORIO REMOTO"
           Write-Host "========================================================================"
           Write-Host ""
           Write-Host "   Usuario:             ${{ env.RDP_USER }}"
@@ -74,7 +66,5 @@ jobs:
           Write-Host ""
           Write-Host "========================================================================"
           
-      - name: Mantener la Conexión Activa
-        # El script se quedará en este paso para mantener la máquina virtual encendida.
-        # Cierra la acción en GitHub cuando termines de usar la VPS.
+      - name: Mantener la Máquina Virtual Activa
         run: Start-Sleep -Seconds 21300
