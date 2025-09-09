@@ -1,4 +1,4 @@
-name: RDP Directo (Solución Final)
+name: RDP Directo (Versión Final y Simplificada)
 
 on:
   workflow_dispatch:
@@ -9,27 +9,27 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Habilitar RDP y Configurar Firewall
+      - name: Habilitar RDP y Crear Usuario
         run: |
-          # Habilita el servicio de Escritorio Remoto
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          # Define una contraseña fija y segura que cumple con los requisitos de longitud y complejidad
+          $Password = "P@ssw0rdFeloxPC2025!"
           
-          # Abre el puerto 3389 en el Firewall de Windows para permitir la conexión
-          netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
-
-      - name: Crear Usuario y Contraseña
-        run: |
-          # Genera una contraseña aleatoria y segura
-          $password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+          # Crea el usuario y establece la contraseña en un solo comando
+          net user Runner $Password /add /y
           
-          # Crea el usuario y lo añade a los grupos correctos
-          net user /add Runner $password
+          # Añade el usuario a los grupos necesarios
           net localgroup administrators Runner /add
           net localgroup "Remote Desktop Users" Runner /add
           
-          # Guarda las credenciales para el paso final
-          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "RDP_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV
+          # Habilita el servicio de Escritorio Remoto
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          
+          # Abre el puerto 3389 en el Firewall de Windows
+          netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
+          
+          # Guarda la contraseña para el paso final
+          echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV
+          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV
 
       - name: Obtener y Mostrar IP Pública
         id: ip
