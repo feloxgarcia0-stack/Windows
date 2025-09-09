@@ -1,4 +1,4 @@
-name: RDP
+name: RDP con ZeroTier (Acceso Público)
 
 on:
   workflow_dispatch:
@@ -24,34 +24,35 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
-      - name: Install Tailscale
+      - name: Install and Connect ZeroTier
         run: |
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-full-latest.exe" -OutFile "$env:TEMP\tailscale-latest.exe"
-          Start-Process -FilePath "$env:TEMP\tailscale-latest.exe" -ArgumentList "/S" -Wait
-
-      - name: Connect Tailscale
-        run: |
-          # --- CLAVE DE AUTENTICACIÓN ACTUALIZADA Y CORRECTA ---
-          $authKey = "tskey-auth-kAstMzAHfZ11CNTRL-bBGLMj8jrw9Mn75CtLCyv999Qa8y6hLEV"
+          # Descarga e instala el cliente de ZeroTier
+          Invoke-WebRequest -Uri "https://download.zerotier.com/dist/ZeroTier%20One.msi" -OutFile "$env:TEMP\zerotier.msi"
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$env:TEMP\zerotier.msi`"", "/quiet" -Wait
           
-          # Inicia sesión con la clave.
-          & "C:\Program Files\Tailscale\tailscale.exe" login --authkey=$authKey --hostname=gh-runner-${{ github.run_id }}
+          # Espera a que el servicio se inicie
+          Start-Sleep -Seconds 10
           
-          # Espera a que se establezca la conexión
-          Start-Sleep -Seconds 15
+          # --- CAMBIO REALIZADO AQUÍ ---
+          # Se une a la red utilizando el Network ID directamente en el script.
+          & 'C:\Program Files\ZeroTier\One\zerotier-cli.bat' join 4753cf475f1fafc2
           
-          # Obtiene la IP
-          $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          if (-not $tsIP) {
-              Write-Error "Error: No se pudo obtener la dirección IP de Tailscale después de iniciar sesión."
+          # Espera a que se establezca la conexión y se asigne la IP
+          Start-Sleep -Seconds 20
+          
+          # Obtiene la dirección IP asignada por ZeroTier
+          $ztIP = (& 'C:\Program Files\ZeroTier\One\zerotier-cli.bat' listnetworks -j | ConvertFrom-Json).assignedAddresses[0].split('/')[0]
+          
+          if (-not $ztIP) {
+              Write-Error "Error: No se pudo obtener la dirección IP de ZeroTier."
               exit 1
           }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          echo "ZEROTIER_IP=$ztIP" >> $env:GITHUB_ENV
       
       - name: Display Connection Details
         run: |
           Write-Host "`n=== RDP ACCESS CREDENTIALS ==="
-          Write-Host "Address (PC Name): ${{ env.TAILSCALE_IP }}"
+          Write-Host "Address (PC Name): ${{ env.ZEROTIER_IP }}"
           Write-Host "Username: RDP"
           Write-Host "Password: ${{ env.RDP_PASSWORD }}"
           Write-Host "============================`n"
