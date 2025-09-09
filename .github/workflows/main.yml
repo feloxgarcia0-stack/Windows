@@ -1,62 +1,52 @@
-name: RDP con ZeroTier (Sintaxis Corregida)
+name: RDP Directo (Solución Final)
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  build:
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-      - name: Configure Core RDP Settings
+      - name: Habilitar RDP y Configurar Firewall
         run: |
+          # Habilita el servicio de Escritorio Remoto
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          
+          # Abre el puerto 3389 en el Firewall de Windows para permitir la conexión
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
 
-      - name: Create RDP User with Secure Password
+      - name: Crear Usuario y Contraseña
         run: |
-          $password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 14 | ForEach-Object {[char]$_})
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
+          # Genera una contraseña aleatoria y segura
+          $password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+          
+          # Crea el usuario y lo añade a los grupos correctos
+          net user /add Runner $password
+          net localgroup administrators Runner /add
+          net localgroup "Remote Desktop Users" Runner /add
+          
+          # Guarda las credenciales para el paso final
+          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "RDP_PASSWORD=$password" | Out-File -FilePath $env:GITHUB_ENV
 
-      - name: Install and Connect ZeroTier
-        run: |
-          Invoke-WebRequest -Uri "https://download.zerotier.com/dist/ZeroTier%20One.msi" -OutFile "$env:TEMP\zerotier.msi"
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$env:TEMP\zerotier.msi`"", "/quiet" -Wait
-          
-          Start-Sleep -Seconds 15
-          
-          $ztCliPath = "C:\Program Files (x86)\ZeroTier\One\zerotier-one_cli.exe"
-          
-          Start-Process -FilePath $ztCliPath -ArgumentList "join 4753cf475f1fafc2" -Wait -NoNewWindow
-          
-          Start-Sleep -Seconds 20
-          
-          $ztJson = Start-Process -FilePath $ztCliPath -ArgumentList "listnetworks -j" -Wait -NoNewWindow -RedirectStandardOutput "$env:TEMP\zt.json"
-          $ztIP = (Get-Content "$env:TEMP\zt.json" | ConvertFrom-Json)[0].assignedAddresses[0].split('/')[0]
+      - name: Obtener y Mostrar IP Pública
+        id: ip
+        uses: haythem/public-ip@v1.2
 
-          if (-not $ztIP) {
-              Write-Error "Error: No se pudo obtener la dirección IP de ZeroTier."
-              exit 1
-          }
-          echo "ZEROTIER_IP=$ztIP" >> $env:GITHUB_ENV
-      
-      - name: Display Connection Details
+      - name: Mostrar Credenciales de Conexión
         run: |
-          Write-Host "`n=== RDP ACCESS CREDENTIALS ==="
-          Write-Host "Address (PC Name): $env:ZEROTIER_IP"
-          Write-Host "Username: RDP"
-          # --- SINTAXIS CORREGIDA AQUÍ ---
-          Write-Host "Password: $env:RDP_PASSWORD"
-          Write-Host "============================`n"
+          Write-Host "================================================================"
+          Write-Host "               CREDENCIALES DE ACCESO RDP"
+          Write-Host "================================================================"
+          Write-Host ""
+          Write-Host "   Dirección IP (PC Name): ${{ steps.ip.outputs.ipv4 }}"
+          Write-Host "   Usuario:                ${{ env.RDP_USER }}"
+          Write-Host "   Contraseña:             ${{ env.RDP_PASSWORD }}"
+          Write-Host ""
+          Write-Host "   (La conexión puede tardar 1-2 minutos en estar disponible)"
+          Write-Host "================================================================"
           
-          while ($true) {
-              $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-              Write-Host "[$timestamp] RDP session is active. This job will be terminated automatically after 6 hours."
-              Start-Sleep -Seconds 300
-          }
+      - name: Mantener la Conexión Activa
+        run: Start-Sleep -Seconds 21300
