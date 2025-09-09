@@ -1,4 +1,4 @@
-name: RDP Directo (Versión Final y Simplificada)
+name: RDP con playit.gg (Solución Definitiva)
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Habilitar RDP y Crear Usuario
         run: |
-          # Define una contraseña fija y segura que cumple con los requisitos de longitud y complejidad
+          # Define una contraseña fija y segura
           $Password = "P@ssw0rdFeloxPC2025!"
           
           # Crea el usuario y establece la contraseña en un solo comando
@@ -24,16 +24,36 @@ jobs:
           # Habilita el servicio de Escritorio Remoto
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           
-          # Abre el puerto 3389 en el Firewall de Windows
+          # Abre el puerto 3389 en el Firewall de Windows (necesario para que playit se conecte localmente)
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
           
-          # Guarda la contraseña para el paso final
+          # Guarda las credenciales para el paso final
+          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV
-          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV
 
-      - name: Obtener y Mostrar IP Pública
-        id: ip
-        uses: haythem/public-ip@v1.2
+      - name: Iniciar Túnel con playit.gg
+        run: |
+          # Descarga el ejecutable de playit.gg
+          Invoke-WebRequest -Uri 'https://github.com/playit-gg/playit-agent/releases/latest/download/playit-windows-x86_64.exe' -OutFile "C:\playit.exe"
+          
+          # Inicia playit en segundo plano, redirigiendo su salida a un archivo para poder leerla
+          Start-Process -FilePath "C:\playit.exe" -ArgumentList "-p 3389" -NoNewWindow -RedirectStandardOutput "$env:TEMP\playit.log" -RedirectStandardError "$env:TEMP\playit_error.log"
+          
+          # Espera a que el túnel se establezca y escriba la dirección en el log
+          echo "Esperando a que playit.gg establezca la conexión (aprox. 30 segundos)..."
+          Start-Sleep -Seconds 30
+          
+          # Lee el archivo de log para encontrar la dirección del túnel
+          $TunnelAddress = Get-Content "$env:TEMP\playit.log" | Select-String -Pattern ".*\.playit\.gg:\d{1,5}" | ForEach-Object { $_.Matches.Value }
+          
+          if (-not $TunnelAddress) {
+              Write-Error "Error: No se pudo obtener la dirección del túnel de playit.gg. Verificando log de errores:"
+              Get-Content "$env:TEMP\playit_error.log"
+              exit 1
+          }
+          
+          # Guarda la dirección del túnel para el siguiente paso
+          echo "PLAYIT_ADDRESS=$TunnelAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Credenciales de Conexión
         run: |
@@ -41,11 +61,10 @@ jobs:
           Write-Host "               CREDENCIALES DE ACCESO RDP"
           Write-Host "================================================================"
           Write-Host ""
-          Write-Host "   Dirección IP (PC Name): ${{ steps.ip.outputs.ipv4 }}"
-          Write-Host "   Usuario:                ${{ env.RDP_USER }}"
-          Write-Host "   Contraseña:             ${{ env.RDP_PASSWORD }}"
+          Write-Host "   Dirección (PC Name): ${{ env.PLAYIT_ADDRESS }}"
+          Write-Host "   Usuario:             ${{ env.RDP_USER }}"
+          Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
           Write-Host ""
-          Write-Host "   (La conexión puede tardar 1-2 minutos en estar disponible)"
           Write-Host "================================================================"
           
       - name: Mantener la Conexión Activa
