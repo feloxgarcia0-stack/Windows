@@ -12,8 +12,8 @@ jobs:
       - name: Configure Core RDP Settings
         run: |
           # Habilita el Escritorio Remoto y deshabilita la Autenticación a Nivel de Red
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControl-Set\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControl-Set\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           
           # Abre el puerto de RDP en el Firewall de Windows
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
@@ -32,24 +32,46 @@ jobs:
           # Guarda la contraseña para mostrarla al final
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
-      # --- CAMBIO REALIZADO AQUÍ ---
-      # Se reemplaza la instalación manual por la acción oficial de Tailscale
+      # --- BLOQUE CORREGIDO: Instalación y Conexión Manual de Tailscale ---
       - name: Install and Connect Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          # La clave de autenticación está directamente aquí
-          authkey: "tskey-auth-kp1EruBawo11CNTRL-AEDVE4Nj2BQQFrNBTyeRBQ6gyHPFLevR"
-          # (Opcional) Define un nombre de host único para cada ejecución
-          hostname: gh-runner-${{ github.run_id }}
-
+        run: |
+          # Descarga el instalador EXE estable más reciente para Windows
+          $installerPath = "$env:TEMP\tailscale-latest.exe"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-full-latest.exe" -OutFile $installerPath
+          
+          # Instala Tailscale silenciosamente
+          Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+          
+          # Define la clave de autenticación
+          $authKey = "tskey-auth-kp1EruBawo11CNTRL-AEDVE4Nj2BQQFrNBTyeRBQ6gyHPFLevR"
+          
+          # Espera brevemente a que el servicio se inicie
+          Start-Sleep -Seconds 5
+          
+          # Conecta Tailscale usando la clave y asigna un nombre de host único
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$authKey --hostname=gh-runner-${{ github.run_id }}
+          
+          # Espera a que Tailscale asigne una dirección IP
+          $tsIP = $null
+          $retries = 0
+          while (-not $tsIP -and $retries -lt 12) {
+              $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+              Start-Sleep -Seconds 5
+              $retries++
+          }
+          
+          if (-not $tsIP) {
+              Write-Error "Error: No se pudo obtener la dirección IP de Tailscale."
+              exit 1
+          }
+          
+          # Guarda la IP para el siguiente paso
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+      
       - name: Display Connection Details
         run: |
-          # Obtenemos la IP de Tailscale después de que la acción la haya configurado
-          $tsIP = tailscale ip -4
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-          
           Write-Host "`n=== RDP ACCESS CREDENTIALS ==="
-          Write-Host "Address (PC Name): $tsIP"
+          Write-Host "Address (PC Name): ${{ env.TAILSCALE_IP }}"
           Write-Host "Username: RDP"
           Write-Host "Password: ${{ env.RDP_PASSWORD }}"
           Write-Host "============================`n"
