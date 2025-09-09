@@ -11,9 +11,9 @@ jobs:
     steps:
       - name: Configure Core RDP Settings
         run: |
-          # Habilita el Escritorio Remoto y deshabilita la Autenticación a Nivel de Red
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControl-Set\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControl-Set\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          # --- RUTAS DEL REGISTRO CORREGIDAS ---
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           
           # Abre el puerto de RDP en el Firewall de Windows
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
@@ -32,7 +32,6 @@ jobs:
           # Guarda la contraseña para mostrarla al final
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
-      # --- BLOQUE CORREGIDO: Instalación y Conexión Manual de Tailscale ---
       - name: Install and Connect Tailscale
         run: |
           # Descarga el instalador EXE estable más reciente para Windows
