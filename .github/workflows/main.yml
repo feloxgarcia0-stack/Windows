@@ -26,16 +26,15 @@ jobs:
 
       - name: Install Tailscale
         run: |
-          # Descarga e instala Tailscale
           Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-full-latest.exe" -OutFile "$env:TEMP\tailscale-latest.exe"
           Start-Process -FilePath "$env:TEMP\tailscale-latest.exe" -ArgumentList "/S" -Wait
 
       - name: Connect Tailscale
         run: |
-          # Define la clave de autenticación
-          $authKey = "tskey-auth-kp1EruBawo11CNTRL-AEDVE4Nj2BQQFrNBTyeRBQ6gyHPFLevR"
+          # --- CLAVE DE AUTENTICACIÓN ACTUALIZADA ---
+          $authKey = "tskey-auth-kFMexvuJbn11CNTRL-9YMgwykW85dm64NfREhk5dKq2RL9RkAVe"
           
-          # Inicia sesión con la clave. Este método es a menudo más robusto.
+          # Inicia sesión con la nueva clave.
           & "C:\Program Files\Tailscale\tailscale.exe" login --authkey=$authKey --hostname=gh-runner-${{ github.run_id }}
           
           # Espera a que se establezca la conexión
