@@ -1,4 +1,4 @@
-name: RDP con playit.gg (Automático - Versión Fija CORREGIDO)
+name: RDP con ngrok (Sin Cuenta)
 
 on:
   workflow_dispatch:
@@ -15,40 +15,39 @@ jobs:
           net user Runner $Password /add /y
           net localgroup administrators Runner /add
           net localgroup "Remote Desktop Users" Runner /add
-          # --- LÍNEA CORREGIDA: Se eliminó el guion extra en "CurrentControlSet" ---
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
           echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Iniciar Túnel con playit.gg
+      - name: Instalar y Iniciar Ngrok
         run: |
-          # URL de descarga específica y verificada (v0.15.26).
-          Invoke-WebRequest -Uri 'https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe' -OutFile "C:\playit.exe"
+          # Descarga ngrok y lo descomprime.
+          Invoke-WebRequest -Uri 'https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip' -OutFile 'ngrok.zip'
+          Expand-Archive ngrok.zip
           
-          # Inicia playit en segundo plano.
-          Start-Process -FilePath "C:\playit.exe" -ArgumentList "" -NoNewWindow -RedirectStandardOutput "$env:TEMP\playit.log" -RedirectStandardError "$env:TEMP\playit_error.log"
+          # Inicia el túnel ngrok para RDP en segundo plano.
+          # No se necesita un token de autenticación para túneles temporales.
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -NoNewWindow -RedirectStandardOutput "$env:TEMP\ngrok.log"
           
-          echo "Esperando a que playit.gg establezca la conexión (40 segundos)..."
-          Start-Sleep -Seconds 40
+          # Espera unos segundos para que la API de ngrok esté disponible.
+          Start-Sleep -Seconds 10
           
-          # Intenta buscar la dirección del túnel ya asignada en el log.
-          $TunnelAddress = Get-Content "$env:TEMP\playit.log" | Select-String -Pattern ".*\.playit\.gg:\d{1,5}" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
+          # Obtiene la dirección del túnel de forma fiable a través de la API de ngrok.
+          $NgrokInfo = Invoke-RestMethod 'http://127.0.0.1:4040/api/tunnels'
+          $TunnelUrl = $NgrokInfo.tunnels[0].public_url
           
-          # PLAN B: Si no encuentra una dirección, busca el enlace de reclamación.
-          if (-not $TunnelAddress) {
-              Write-Host "No se encontró una dirección directa, buscando enlace de reclamación como alternativa."
-              $TunnelAddress = Get-Content "$env:TEMP\playit.log" | Select-String -Pattern "https://playit.gg/claim/.*" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
-          }
-
-          if (-not $TunnelAddress) {
-              Write-Error "Error: No se pudo obtener la dirección del túnel ni un enlace de reclamación."
-              Get-Content "$env:TEMP\playit_error.log"
-              Get-Content "$env:TEMP\playit.log"
+          # Si no se pudo obtener la URL, muestra un error.
+          if (-not $TunnelUrl) {
+              Write-Error "Error: No se pudo obtener la dirección del túnel de ngrok."
+              Get-Content "$env:TEMP\ngrok.log"
               exit 1
           }
           
-          echo "PLAYIT_ADDRESS=$TunnelAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Limpia la URL para que sea más fácil de usar.
+          $CleanAddress = $TunnelUrl -replace "tcp://",""
+          
+          echo "NGROK_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Credenciales de Conexión
         run: |
@@ -56,11 +55,13 @@ jobs:
           Write-Host "               CREDENCIALES DE ACCESO RDP"
           Write-Host "================================================================"
           Write-Host ""
-          Write-Host "   Dirección (PC Name): ${{ env.PLAYIT_ADDRESS }}"
-          Write-Host "   (Si es un enlace https, visítalo primero para reclamar el túnel)"
+          Write-Host "   Usa los siguientes datos en tu cliente de Escritorio Remoto:"
+          Write-Host ""
+          Write-Host "   Dirección (PC Name): ${{ env.NGROK_ADDRESS }}"
           Write-Host "   Usuario:             ${{ env.RDP_USER }}"
           Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
           Write-Host ""
+          Write-Host "   NOTA: La dirección incluye el puerto. Cópiala y pégala tal cual."
           Write-Host "================================================================"
           
       - name: Mantener la Conexión Activa
