@@ -31,10 +31,10 @@ jobs:
 
       - name: Connect Tailscale
         run: |
-          # --- CLAVE DE AUTENTICACIÓN ACTUALIZADA ---
-          $authKey = "tskey-auth-kFMexvuJbn11CNTRL-9YMgwykW85dm64NfREhk5dKq2RL9RkAVe"
+          # --- CLAVE DE AUTENTICACIÓN ACTUALIZADA Y CORRECTA ---
+          $authKey = "tskey-auth-kAstMzAHfZ11CNTRL-bBGLMj8jrw9Mn75CtLCyv999Qa8y6hLEV"
           
-          # Inicia sesión con la nueva clave.
+          # Inicia sesión con la clave.
           & "C:\Program Files\Tailscale\tailscale.exe" login --authkey=$authKey --hostname=gh-runner-${{ github.run_id }}
           
           # Espera a que se establezca la conexión
