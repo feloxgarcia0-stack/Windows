@@ -1,4 +1,4 @@
-name: RDP con Cloudflare Tunnel (Sin Cuenta)
+name: RDP con Cloudflare (Depuración Final)
 
 on:
   workflow_dispatch:
@@ -20,50 +20,45 @@ jobs:
           echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Iniciar Cloudflare Tunnel
+      - name: Iniciar Cloudflare Tunnel y Diagnosticar
         run: |
-          # Descarga el ejecutable de cloudflared (64-bit).
+          # Descarga el ejecutable de cloudflared.
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'C:\cloudflared.exe'
           
-          # Inicia el túnel en modo "Quick Tunnel" para RDP en segundo plano.
-          # La salida de error se redirige a un log para poder extraer la dirección.
+          # Inicia el túnel en segundo plano, redirigiendo su salida de error a un log.
           Start-Process -FilePath "C:\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389" -NoNewWindow -RedirectStandardError "$env:TEMP\cloudflared.log"
           
-          # Espera a que se establezca la conexión y se genere la dirección.
-          Write-Host "Esperando a que Cloudflare establezca el túnel (20 segundos)..."
-          Start-Sleep -Seconds 20
+          # Aumentamos la espera a 30 segundos para dar el máximo tiempo posible.
+          Write-Host "Esperando 30 segundos a que Cloudflare establezca el túnel..."
+          Start-Sleep -Seconds 30
           
-          # Busca la dirección pública en el log. Cloudflare usa un formato predecible.
-          # El formato es tcp://nombre-aleatorio.trycloudflare.com
-          $CfAddress = Get-Content "$env:TEMP\cloudflared.log" | Select-String -Pattern "tcp://.*\.trycloudflare.com" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
-          
-          # Si no se encuentra, muestra un error.
-          if (-not $CfAddress) {
-              Write-Error "Error: No se pudo obtener la dirección del túnel de Cloudflare."
-              Write-Host "Contenido del log:"
+          # --- PASO DE DIAGNÓSTICO ---
+          # Mostramos el contenido completo del archivo de log, PASE LO QUE PASE.
+          Write-Host "================ INICIO DEL LOG DE CLOUDFLARE ================"
+          # Usamos try/catch para evitar que el workflow falle si el archivo no existe.
+          try {
               Get-Content "$env:TEMP\cloudflared.log"
+          } catch {
+              Write-Host "El archivo de log no existe o está vacío."
+          }
+          Write-Host "================= FIN DEL LOG DE CLOUDFLARE ================="
+          
+          # Buscamos la dirección del túnel en el log.
+          $CfAddress = Get-Content "$env:TEMP\cloudflared.log" -ErrorAction SilentlyContinue | Select-String -Pattern "tcp://.*\.trycloudflare.com" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
+          
+          if (-not $CfAddress) {
+              Write-Error "Diagnóstico final: No se encontró la dirección del túnel en el log. Revisa el contenido del log de arriba para ver el error."
               exit 1
           }
           
-          # Limpia el "tcp://" del inicio para que sea más fácil de usar.
           $CleanAddress = $CfAddress -replace "tcp://",""
-          
           echo "CF_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Credenciales de Conexión
         run: |
-          Write-Host "================================================================"
-          Write-Host "               CREDENCIALES DE ACCESO RDP"
-          Write-Host "================================================================"
-          Write-Host ""
-          Write-Host "   Usa los siguientes datos en tu cliente de Escritorio Remoto:"
-          Write-Host ""
-          Write-Host "   Dirección (PC Name): ${{ env.CF_ADDRESS }}"
-          Write-Host "   Usuario:             ${{ env.RDP_USER }}"
-          Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
-          Write-Host ""
-          Write-Host "   NOTA: La dirección incluye el puerto. Cópiala y pégala tal cual."
-          Write-Host "================================================================"
+          Write-Host "Dirección (PC Name): ${{ env.CF_ADDRESS }}"
+          Write-Host "Usuario:             ${{ env.RDP_USER }}"
+          Write-Host "Contraseña:          ${{ env.RDP_PASSWORD }}"
           
       - name: Mantener la Conexión Activa
         run: Start-Sleep -Seconds 21300
