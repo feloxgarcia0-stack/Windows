@@ -1,4 +1,4 @@
-name: RDP con ngrok (Versión Robusta)
+name: RDP con Cloudflare Tunnel (Sin Cuenta)
 
 on:
   workflow_dispatch:
@@ -20,35 +20,35 @@ jobs:
           echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Instalar y Iniciar Ngrok
+      - name: Iniciar Cloudflare Tunnel
         run: |
-          # Descarga ngrok y lo descomprime en el directorio actual.
-          Invoke-WebRequest -Uri 'https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip' -OutFile 'ngrok.zip'
-          Expand-Archive ngrok.zip -DestinationPath .
+          # Descarga el ejecutable de cloudflared (64-bit).
+          Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'C:\cloudflared.exe'
           
-          # --- PASO DE VERIFICACIÓN ---
-          # Mostramos los archivos en la carpeta para confirmar que ngrok.exe está ahí.
-          Write-Host "Verificando la existencia de ngrok.exe..."
-          ls
+          # Inicia el túnel en modo "Quick Tunnel" para RDP en segundo plano.
+          # La salida de error se redirige a un log para poder extraer la dirección.
+          Start-Process -FilePath "C:\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389" -NoNewWindow -RedirectStandardError "$env:TEMP\cloudflared.log"
           
-          # Inicia el túnel ngrok en segundo plano.
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -NoNewWindow -RedirectStandardOutput "$env:TEMP\ngrok.log"
+          # Espera a que se establezca la conexión y se genere la dirección.
+          Write-Host "Esperando a que Cloudflare establezca el túnel (20 segundos)..."
+          Start-Sleep -Seconds 20
           
-          # Espera a que la API de ngrok esté disponible.
-          Start-Sleep -Seconds 10
+          # Busca la dirección pública en el log. Cloudflare usa un formato predecible.
+          # El formato es tcp://nombre-aleatorio.trycloudflare.com
+          $CfAddress = Get-Content "$env:TEMP\cloudflared.log" | Select-String -Pattern "tcp://.*\.trycloudflare.com" | ForEach-Object { $_.Matches.Value } | Select-Object -Last 1
           
-          # Obtiene la dirección del túnel de forma fiable.
-          $NgrokInfo = Invoke-RestMethod -Uri 'http://127.0.0.1:4040/api/tunnels'
-          $TunnelUrl = $NgrokInfo.tunnels[0].public_url
-          
-          if (-not $TunnelUrl) {
-              Write-Error "Error: No se pudo obtener la dirección del túnel de ngrok."
-              Get-Content "$env:TEMP\ngrok.log"
+          # Si no se encuentra, muestra un error.
+          if (-not $CfAddress) {
+              Write-Error "Error: No se pudo obtener la dirección del túnel de Cloudflare."
+              Write-Host "Contenido del log:"
+              Get-Content "$env:TEMP\cloudflared.log"
               exit 1
           }
           
-          $CleanAddress = $TunnelUrl -replace "tcp://",""
-          echo "NGROK_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Limpia el "tcp://" del inicio para que sea más fácil de usar.
+          $CleanAddress = $CfAddress -replace "tcp://",""
+          
+          echo "CF_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Credenciales de Conexión
         run: |
@@ -56,10 +56,13 @@ jobs:
           Write-Host "               CREDENCIALES DE ACCESO RDP"
           Write-Host "================================================================"
           Write-Host ""
-          Write-Host "   Dirección (PC Name): ${{ env.NGROK_ADDRESS }}"
+          Write-Host "   Usa los siguientes datos en tu cliente de Escritorio Remoto:"
+          Write-Host ""
+          Write-Host "   Dirección (PC Name): ${{ env.CF_ADDRESS }}"
           Write-Host "   Usuario:             ${{ env.RDP_USER }}"
           Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
           Write-Host ""
+          Write-Host "   NOTA: La dirección incluye el puerto. Cópiala y pégala tal cual."
           Write-Host "================================================================"
           
       - name: Mantener la Conexión Activa
