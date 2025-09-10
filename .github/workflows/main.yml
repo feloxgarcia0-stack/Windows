@@ -1,4 +1,4 @@
-name: RDP con ngrok (Sin Cuenta)
+name: RDP con Serveo.net (Sin Descargas)
 
 on:
   workflow_dispatch:
@@ -20,34 +20,29 @@ jobs:
           echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Instalar y Iniciar Ngrok
+      - name: Iniciar Túnel con Serveo.net
         run: |
-          # Descarga ngrok y lo descomprime.
-          Invoke-WebRequest -Uri 'https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip' -OutFile 'ngrok.zip'
-          Expand-Archive ngrok.zip
+          # Inicia el túnel SSH en segundo plano. No se descarga nada.
+          # -o StrictHostKeyChecking=no : Acepta la clave del servidor automáticamente.
+          # -R 0:localhost:3389 : Pide a Serveo un puerto aleatorio para nuestro puerto RDP (3389).
+          Start-Process -FilePath "ssh" -ArgumentList "-o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net" -NoNewWindow -RedirectStandardError "$env:TEMP\serveo.log" -RedirectStandardOutput "$env:TEMP\serveo_out.log"
           
-          # Inicia el túnel ngrok para RDP en segundo plano.
-          # No se necesita un token de autenticación para túneles temporales.
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -NoNewWindow -RedirectStandardOutput "$env:TEMP\ngrok.log"
+          # Espera a que se establezca la conexión y se genere la dirección.
+          Write-Host "Esperando a que Serveo.net establezca la conexión (20 segundos)..."
+          Start-Sleep -Seconds 20
           
-          # Espera unos segundos para que la API de ngrok esté disponible.
-          Start-Sleep -Seconds 10
+          # Busca la dirección pública en el log. El texto de Serveo es muy predecible.
+          $ServeoAddress = Get-Content "$env:TEMP\serveo.log" | Select-String -Pattern "Forwarding TCP from (.*) to" | ForEach-Object { $_.Matches[1].Groups[1].Value } | Select-Object -Last 1
           
-          # Obtiene la dirección del túnel de forma fiable a través de la API de ngrok.
-          $NgrokInfo = Invoke-RestMethod 'http://127.0.0.1:4040/api/tunnels'
-          $TunnelUrl = $NgrokInfo.tunnels[0].public_url
-          
-          # Si no se pudo obtener la URL, muestra un error.
-          if (-not $TunnelUrl) {
-              Write-Error "Error: No se pudo obtener la dirección del túnel de ngrok."
-              Get-Content "$env:TEMP\ngrok.log"
+          # Si no se encuentra, muestra un error.
+          if (-not $ServeoAddress) {
+              Write-Error "Error: No se pudo obtener la dirección del túnel de Serveo.net."
+              Write-Host "Contenido del log:"
+              Get-Content "$env:TEMP\serveo.log"
               exit 1
           }
           
-          # Limpia la URL para que sea más fácil de usar.
-          $CleanAddress = $TunnelUrl -replace "tcp://",""
-          
-          echo "NGROK_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "SERVEO_ADDRESS=$ServeoAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Mostrar Credenciales de Conexión
         run: |
@@ -57,11 +52,12 @@ jobs:
           Write-Host ""
           Write-Host "   Usa los siguientes datos en tu cliente de Escritorio Remoto:"
           Write-Host ""
-          Write-Host "   Dirección (PC Name): ${{ env.NGROK_ADDRESS }}"
+          Write-Host "   Dirección (PC Name): ${{ env.SERVEO_ADDRESS }}"
           Write-Host "   Usuario:             ${{ env.RDP_USER }}"
           Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
           Write-Host ""
           Write-Host "   NOTA: La dirección incluye el puerto. Cópiala y pégala tal cual."
+          Write-Host "   (Ejemplo: random.serveo.net:12345)"
           Write-Host "================================================================"
           
       - name: Mantener la Conexión Activa
