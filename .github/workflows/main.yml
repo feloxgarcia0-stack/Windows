@@ -1,4 +1,4 @@
-name: RDP con tmate (Acceso Directo)
+name: RDP con tmate (SIN Verificación de Clave)
 
 on:
   workflow_dispatch:
@@ -19,6 +19,9 @@ jobs:
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
 
       - name: Iniciar tmate para dar Acceso SSH
-        # Esta acción simplemente abre la conexión y te da la dirección.
-        # Se ha quitado la restricción de clave para que puedas entrar.
         uses: mxschmitt/action-tmate@v3
+        with:
+          # --- LA LÍNEA MÁS IMPORTANTE ---
+          # Esto desactiva la necesidad de una clave pública SSH.
+          # Ahora no te dará "Permission denied".
+          limit-access-to-actor: false
