@@ -1,4 +1,4 @@
-name: RDP con tmate (Manual y Fiable)
+name: RDP con tmate (Acceso Directo)
 
 on:
   workflow_dispatch:
@@ -18,15 +18,7 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
 
-      - name: Iniciar Sesión de tmate
+      - name: Iniciar tmate para dar Acceso SSH
+        # Esta acción simplemente abre la conexión y te da la dirección.
+        # Se ha quitado la restricción de clave para que puedas entrar.
         uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
-
-      # Este último paso es solo para recordarte la contraseña al final del log.
-      - name: Mostrar Contraseña de RDP
-        run: |
-          Write-Host "================================================================"
-          Write-Host "La contraseña de RDP es: P@ssw0rdFeloxPC2025!"
-          Write-Host "El usuario es: Runner"
-          Write-Host "================================================================"
