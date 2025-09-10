@@ -1,4 +1,4 @@
-name: RDP con Cloudflare (Script Corregido y Final)
+name: RDP con tmate (Manual y Fiable)
 
 on:
   workflow_dispatch:
@@ -17,51 +17,16 @@ jobs:
           net localgroup "Remote Desktop Users" Runner /add
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
-          echo "RDP_USER=Runner" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "RDP_PASSWORD=$Password" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Iniciar Cloudflare Tunnel
-        run: |
-          # Descarga el ejecutable de cloudflared.
-          Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile 'C:\cloudflared.exe'
-          
-          # Inicia el túnel en segundo plano.
-          Start-Process -FilePath "C:\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389" -NoNewWindow -RedirectStandardError "$env:TEMP\cloudflared.log"
-          
-          Write-Host "Esperando a que Cloudflare establezca el túnel (30 segundos)..."
-          Start-Sleep -Seconds 30
-          
-          # --- LÓGICA CORREGIDA ---
-          # Busca la línea que contiene "trycloudflare.com" y extrae la URL completa.
-          $LineWithURL = Get-Content "$env:TEMP\cloudflared.log" -ErrorAction SilentlyContinue | Select-String -Pattern "trycloudflare.com" | Select-Object -Last 1
-          
-          # Extrae la URL de la línea encontrada
-          $CfUrl = ($LineWithURL -split ' ')[-1]
+      - name: Iniciar Sesión de tmate
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
 
-          if (-not $CfUrl) {
-              Write-Error "Error: No se pudo obtener la dirección del túnel de Cloudflare."
-              Write-Host "Contenido del log:"
-              Get-Content "$env:TEMP\cloudflared.log"
-              exit 1
-          }
-          
-          # Limpia la URL para obtener solo el HOSTNAME y el PUERTO.
-          $Uri = New-Object System.Uri($CfUrl)
-          $CleanAddress = $Uri.Host + ":3389" # Se usa el puerto RDP por defecto
-          
-          echo "CF_ADDRESS=$CleanAddress" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Mostrar Credenciales de Conexión
+      # Este último paso es solo para recordarte la contraseña al final del log.
+      - name: Mostrar Contraseña de RDP
         run: |
           Write-Host "================================================================"
-          Write-Host "               ¡TÚNEL CREADO CON ÉXITO!"
+          Write-Host "La contraseña de RDP es: P@ssw0rdFeloxPC2025!"
+          Write-Host "El usuario es: Runner"
           Write-Host "================================================================"
-          Write-Host ""
-          Write-Host "   Dirección (PC Name): ${{ env.CF_ADDRESS }}"
-          Write-Host "   Usuario:             ${{ env.RDP_USER }}"
-          Write-Host "   Contraseña:          ${{ env.RDP_PASSWORD }}"
-          Write-Host ""
-          Write-Host "================================================================"
-          
-      - name: Mantener la Conexión Activa
-        run: Start-Sleep -Seconds 21300
